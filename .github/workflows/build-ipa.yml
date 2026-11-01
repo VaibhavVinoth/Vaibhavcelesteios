@@ -5,54 +5,46 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14 # Uses Apple Silicon M1/M2 runners for faster .NET builds
+    runs-on: macos-14
 
     steps:
-    # 1. Clone repo alongside its nested FNA submodules
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         submodules: 'recursive'
 
-    # 2. Set up modern .NET environment 
+    # 1. Install dependencies required for the project
     - name: Setup .NET SDK
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.x'
 
-    # 3. Download and extract your legal Celeste assets
-    - name: Hydrate Celeste Game Content
-      env:
-        CONTENT_URL: ${{ secrets.CELESTE_CONTENT_URL }}
-      run: |
-        mkdir -p orig_files
-        curl -L "$CONTENT_URL" -o orig_files/Content.zip
-        unzip orig_files/Content.zip -d orig_files/
-        # Note: Ensure the 'Content' folder sits directly where build.sh expects it.
-        # If your build.sh prompts for interaction, you may need to pre-stage
-        # Celeste.exe, FNA.dll, etc., inside the expected directory.
-
-    # 4. Install tool prerequisites globally required by build.sh
+    # Installs the decompiler required by build.sh
     - name: Install Tools via Dotnet
       run: |
         dotnet tool install -g ilspycmd --version 8.0.0.7246-preview3
 
-    # 5. Run the DIY patch script non-interactively
+    # 2. Extract your Linux game archive into the exact folder the script looks for
+    # NOTE: This assumes your file is named 'celeste-linux.tar.gz' and is sitting in the root folder.
+    # Change the file name below if yours is named differently.
+     Tar -xzf celeste-linux.tar.gz -C orig_files/ || tar -xzf assets/celeste-linux.tar.gz -C orig_files/
+
+    # 3. Disable code signing and force-run the interactive build script
     - name: Patch and Compile Celeste
       run: |
-        # Bypass signature requirements at the xcodebuild/msbuild level
         export CODE_SIGNING_ALLOWED=NO
         export CODE_SIGNING_REQUIRED=NO
         export CODE_SIGN_IDENTITY=""
         export PROVISIONING_PROFILE_SPECIFIER=""
         
-        # Run build script (assuming you adjusted it to run headless without read prompts)
         chmod +x build.sh
-        ./build.sh
+        
+        # 'yes ""' automatically presses Enter for you whenever the script pauses
+        yes "" | ./build.sh
 
-    # 6. Gather and export the compiled unsigned IPA
+    # 4. Save and export the final .ipa file to GitHub
     - name: Upload Unsigned IPA Artifact
       uses: actions/upload-artifact@v4
       with:
         name: Celeste-Unsigned-IPA
-        path: "*.ipa" # Finds the outputted celestemeow.ipa
+        path: "*.ipa"
